@@ -29,111 +29,68 @@
 <body>
 <div class="wrap">
   <h2 style="margin:0 0 20px">AI Invoice Extractor</h2>
-  
   <div class="card" id="s1">
     <h3>1. Upload Invoices</h3>
     <div class="drop" id="dz">Drag & drop or click (max 40 PDFs)</div>
     <input type="file" id="fi" multiple accept=".pdf" hidden>
     <div class="status" id="fc">0 files selected</div>
   </div>
-
   <div class="card" id="s2">
-    <h3>2. Define Columns to Extract</h3>
+    <h3>2. Define Columns</h3>
     <div class="input-group">
       <label>Columns (comma separated)</label>
-      <input type="text" id="cols" placeholder="e.g., Company Name, Date, Total Amount">
+      <input type="text" id="cols" placeholder="e.g., Company, Date, Total">
     </div>
-    <button class="btn" id="btn" disabled>Extract with AI</button>
+    <button class="btn" id="btn" disabled>Extract</button>
   </div>
-
   <div class="card hidden" id="s3">
     <h3>3. Preview & Download</h3>
     <div class="status" id="stat"></div>
     <div class="progress"><div class="bar" id="bar"></div></div>
     <div style="overflow-x:auto" id="prev"></div>
-    <div class="warn">⚠️ Download now. Data is processed in-memory and vanishes when you close this tab.</div>
+    <div class="warn">⚠️ Download now. Data vanishes on tab close.</div>
     <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn" id="dlxls">Download Excel</button>
-      <button class="btn" id="dlpdf">Download PDF</button>
+      <button class="btn" id="dlxls" disabled>Download Excel</button>
+      <button class="btn" id="dlpdf" disabled>Download PDF</button>
       <button class="btn sec" onclick="location.reload()">Reset</button>
     </div>
   </div>
 </div>
-
 <script>
-const API = "http://localhost:8000/api";
-let files = [], tid = null;
-const $ = id => document.getElementById(id);
-const dz=$("dz"), fi=$("fi"), fc=$("fc"), cols=$("cols"), btn=$("btn"), prev=$("prev"), stat=$("stat"), dlxls=$("dlxls"), dlpdf=$("dlpdf"), bar=$("bar");
+const API = "http://localhost:8000/api"; // REPLACE WITH RENDER URL WHEN DEPLOYED
+let files=[], tid=null;
+const $=id=>document.getElementById(id);
+const dz=$("dz"),fi=$("fi"),fc=$("fc"),cols=$("cols"),btn=$("btn"),prev=$("prev"),stat=$("stat"),dlxls=$("dlxls"),dlpdf=$("dlpdf"),bar=$("bar");
 
-dz.onclick = () => fi.click();
-dz.ondragover = e => { e.preventDefault(); dz.style.borderColor="#2563eb"; dz.style.background="#f0f7ff"; };
-dz.ondragleave = () => { dz.style.borderColor="#cbd5e1"; dz.style.background="#fff"; };
-dz.ondrop = e => { e.preventDefault(); dz.style.borderColor="#cbd5e1"; dz.style.background="#fff"; add(e.dataTransfer.files); };
-fi.onchange = () => add(fi.files);
+dz.onclick=()=>fi.click();
+dz.ondragover=e=>{e.preventDefault();dz.style.borderColor="#2563eb";dz.style.background="#f0f7ff";};
+dz.ondragleave=()=>{dz.style.borderColor="#cbd5e1";dz.style.background="#fff";};
+dz.ondrop=e=>{e.preventDefault();dz.style.borderColor="#cbd5e1";dz.style.background="#fff";add(e.dataTransfer.files);};
+fi.onchange=()=>add(fi.files);
+function add(f){const p=Array.from(f).filter(x=>x.type==="application/pdf").slice(0,40);files=[...files,...p];fc.textContent=files.length+" ready";updBtn();}
+cols.oninput=updBtn;
+function updBtn(){btn.disabled=!(files.length&&cols.value.trim());}
 
-function add(f) {
-  const p = Array.from(f).filter(x => x.type === "application/pdf").slice(0, 40);
-  files = [...files, ...p];
-  fc.textContent = files.length + " files ready";
-  updBtn();
-}
-
-cols.oninput = updBtn;
-function updBtn() { btn.disabled = !(files.length && cols.value.trim()); }
-
-btn.onclick = async () => {
-  btn.disabled = true; btn.textContent = "AI Processing (~30-90s)...";
-  $("s3").classList.remove("hidden"); stat.textContent = "Extracting data...";
-  prev.innerHTML = ""; dlxls.disabled = true; dlpdf.disabled = true;
-  bar.style.width = "10%";
-
-  let prog = 10;
-  const int = setInterval(() => { prog = Math.min(prog + 2, 90); bar.style.width = prog + "%"; }, 800);
-
-  const fd = new FormData(); files.forEach(f => fd.append("files", f));
-  const q = `columns=${encodeURIComponent(cols.value.trim())}`;
-  
-  try {
-    const r = await fetch(`${API}/extract?${q}`, { method: "POST", body: fd });
-    if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.detail || "Backend failed"); }
-    const d = await r.json();
-    tid = d.task_id;
-    
-    clearInterval(int); bar.style.width = "100%";
-    
-    let html = "<table><thead><tr>";
-    const keys = Object.keys(d.preview[0] || {});
-    keys.forEach(k => html += `<th>${k}</th>`);
-    html += "</tr></thead><tbody>";
-    d.preview.forEach(row => {
-      html += "<tr>"; keys.forEach(k => html += `<td>${row[k] || "-"}</td>`); html += "</tr>";
-    });
-    html += "</tbody></table>";
-    prev.innerHTML = html;
-    stat.textContent = `✅ Extracted ${d.total} invoices. Ready.`;
-    dlxls.disabled = false; dlpdf.disabled = false;
-  } catch (e) {
-    clearInterval(int); bar.style.width = "0%";
-    stat.textContent = `❌ ${e.message || "Failed. Check console."}`;
-  }
-  btn.textContent = "Extract with AI"; btn.disabled = false;
+btn.onclick=async()=>{
+  btn.disabled=true;btn.textContent="Processing...";
+  $("s3").classList.remove("hidden");stat.textContent="Extracting...";prev.innerHTML="";dlxls.disabled=true;dlpdf.disabled=true;bar.style.width="10%";
+  let prog=10;const int=setInterval(()=>{prog=Math.min(prog+2,90);bar.style.width=prog+"%";},800);
+  const fd=new FormData();files.forEach(f=>fd.append("files",f));
+  try{
+    const r=await fetch(`${API}/extract?columns=${encodeURIComponent(cols.value.trim())}`,{method:"POST",body:fd});
+    if(!r.ok)throw new Error("Backend failed");
+    const d=await r.json();tid=d.task_id;
+    clearInterval(int);bar.style.width="100%";
+    let h="<table><thead><tr>";const k=Object.keys(d.preview[0]||{});k.forEach(x=>h+=`<th>${x}</th>`);h+="</tr></thead><tbody>";
+    d.preview.forEach(r=>{h+="<tr>";k.forEach(x=>h+=`<td>${r[x]||"-"}</td>`);h+="</tr>";});h+="</tbody></table>";
+    prev.innerHTML=h;stat.textContent=`✅ ${d.total} invoices ready.`;dlxls.disabled=false;dlpdf.disabled=false;
+  }catch(e){clearInterval(int);bar.style.width="0%";stat.textContent=`❌ ${e.message}`;}
+  btn.textContent="Extract";btn.disabled=false;
 };
 
-// ✅ Reliable download using anchor tags (bypasses fetch CORS issues)
-dlxls.onclick = () => triggerDownload(`${API}/download/excel/${tid}`, "invoices.xlsx");
-dlpdf.onclick = () => triggerDownload(`${API}/download/pdf/${tid}`, "invoices.pdf");
-
-function triggerDownload(url, filename) {
-  if (!tid) return alert("Extract data first.");
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.target = "_blank";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
+// ✅ Direct browser navigation bypasses fetch/CORS issues entirely
+dlxls.onclick=()=>tid&&window.open(`${API}/download/excel/${tid}`,"_blank");
+dlpdf.onclick=()=>tid&&window.open(`${API}/download/pdf/${tid}`,"_blank");
 </script>
 </body>
 </html>
