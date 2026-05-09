@@ -31,8 +31,8 @@
   
   /* ✅ Warning Row Layout */
   .top-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}
-  .warning-group{display:flex;align-items:center;gap:12px}
-  .badge{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:500;display:flex;align-items:center;white-space:nowrap}
+  .badge{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:500;white-space:nowrap}
+  .warning-img{width:100px;height:150px;object-fit:contain;flex-shrink:0} /* ✅ Independent sizing - change these values freely */
 </style>
 </head>
 <body>
@@ -60,15 +60,15 @@
   </div>
 
   <div class="card hidden" id="s3">
-    <!-- ✅ Yellow box (text only) + Image to the right -->
+    <!-- ✅ Yellow box and Image are now independent siblings -->
     <div class="top-header">
       <h3 style="margin:0">3. Preview & Download</h3>
-      <div class="warning-group">
+      <div style="display:flex;align-items:center;gap:12px">
         <div class="badge">
             It is not stored anywhere, please download. SORRY!!
         </div>
-        <!-- 🖼️ Image sits outside the yellow box, slightly bigger -->
-        <img src="./cam-shy-posing.png" alt="cam-shy-posing" style="width:8-px;height:100px;object-fit:contain;">
+        <!-- 🖼️ Image is now completely independent - resize freely -->
+        <img src="./cam-shy-posing.png" alt="cam-shy-posing" class="warning-img">
       </div>
     </div>
 
