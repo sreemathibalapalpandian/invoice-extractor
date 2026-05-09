@@ -30,16 +30,58 @@ CACHE_TTL = 600
 def extract_text(pdf_bytes: bytes) -> str:
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            return " ".join(page.extract_text() or "" for page in pdf.pages)[:8000]
+            # Extract ALL pages, but prioritize LAST 3000 chars (where totals live)
+            full = " ".join(page.extract_text() or "" for page in pdf.pages)
+            return full[-4000:] if len(full) > 4000 else full  # Keep tail + some context
     except: return ""
 
-def regex_fallback(text: str, field: str) -> str:
-    if "date" in field.lower():
-        m = re.search(r'\b(?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])[/-](?:19|20)?\d{2}\b', text)
-        return m.group(0) if m else "-"
-    if any(k in field.lower() for k in ["amount", "total", "paid", "price"]):
-        m = re.search(r'\$?[\d,]+\.?\d*', text)
-        return "$" + m.group(0).lstrip("$") if m else "-"
+def extract_final_amount(text: str) -> str:
+    """Bulletproof final amount extractor: keyword-anchored + value-validated"""
+    # 1. Look for explicit total keywords at END of text (most reliable)
+    total_patterns = [
+        r'(?:grand\s*total|total\s*due|amount\s*due|balance\s*due|final\s*total|total\s*amount)\s*:?\s*\$?([\d,]+\.?\d*)',
+        r'\bTOTAL\s*:?\s*\$?([\d,]+\.?\d*)',
+        r'(?:net\s*total|sum\s*total)\s*:?\s*\$?([\d,]+\.?\d*)'
+    ]
+    for pat in total_patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            val = m.group(1).replace(',', '')
+            try:
+                return f"${float(val):,.2f}"
+            except: return f"${val}"
+    
+    # 2. Fallback: grab ALL $ amounts, return the LARGEST (usually the total)
+    amounts = re.findall(r'\$?([\d,]+\.?\d{2})\b', text)
+    if amounts:
+        clean = [float(a.replace(',', '')) for a in amounts if re.match(r'^[\d,]+\.?\d{2}$', a.replace(',', ''))]
+        if clean:
+            return f"${max(clean):,.2f}"
+    
+    return "-"
+
+def extract_date(text: str) -> str:
+    """Smart date extractor with fallbacks"""
+    # 1. Look for explicit date keywords
+    date_pats = [
+        r'(?:paid\s*date|payment\s*date|date\s*paid)\s*:?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})',
+        r'(?:invoice\s*date|inv\s*date)\s*:?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})',
+        r'(?:due\s*date)\s*:?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})'
+    ]
+    for pat in date_pats:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m: return m.group(1).strip()
+    
+    # 2. Fallback: first standalone date-like pattern
+    m = re.search(r'\b(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b', text)
+    return m.group(1).strip() if m else "-"
+
+def extract_company(text: str) -> str:
+    """Company = first meaningful non-address line"""
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    for line in lines[:8]:  # Check top 8 lines
+        if len(line) > 5 and line[0].isalpha() and not re.search(r'(?:street|ave|road|blvd|suite|\d{5,}|tx|ny|ca|il|wa)', line, re.I):
+            return line.split(',')[0].strip()  # Cut off address if present
     return "-"
 
 async def call_groq(client: AsyncGroq, prompt: str, retries: int = 3):
@@ -74,21 +116,61 @@ async def extract(files: list[UploadFile] = File(...), columns: str = Query(...)
             content = await f.read()
             text = await asyncio.to_thread(extract_text, content)
             if not text.strip(): return {"Source_File": f.filename, **{h: "-" for h in headers}}
-            prompt = f"""Extract ONLY these fields. Return strict JSON. Use null if missing.
+            
+            # 🔹 SMART PROMPT: Explicit rules for each field type
+            prompt = f"""Extract ONLY these exact fields. Return strict JSON. Use null if truly missing.
 Fields: {json.dumps(headers)}
-Rules: company=top vendor, date=paid/invoice date, amount=FINAL total only.
-Text: {text}"""
+
+STRICT RULES:
+- For ANY field containing "amount", "total", "paid", or "price": 
+  → Extract ONLY the FINAL grand total (e.g., "$1,325.00"). 
+  → IGNORE line items, shipping, tax, subtotals. 
+  → Look for keywords: "TOTAL:", "Grand Total", "Amount Due".
+- For ANY field containing "date": 
+  → Extract invoice/paid/due date. Keep original format.
+- For ANY field containing "company", "vendor", or "name": 
+  → Extract top business name. Ignore addresses.
+- Return ONLY valid JSON with exact keys. No extra text.
+
+Text excerpt (tail-focused): {text}"""
+            
             try:
                 data = await call_groq(client, prompt)
                 row = {"Source_File": f.filename}
                 for h in headers:
                     val = data.get(h)
-                    if val in (None, "", "-"): val = regex_fallback(text, h)
-                    row[h] = str(val).strip() if val else "-"
+                    h_lower = h.lower()
+                    
+                    # 🔹 Field-specific validation & fallback
+                    if any(k in h_lower for k in ["amount", "total", "paid", "price"]):
+                        # Validate AI amount: must look like $X,XXX.XX
+                        if val and re.match(r'^\$?[\d,]+\.?\d*$', str(val)):
+                            row[h] = str(val).strip()
+                        else:
+                            row[h] = await asyncio.to_thread(extract_final_amount, text)
+                            print(f"🔁 Fallback amount for {f.filename}: {row[h]}")
+                    elif "date" in h_lower:
+                        row[h] = val if val and re.match(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}', str(val)) else await asyncio.to_thread(extract_date, text)
+                    elif any(k in h_lower for k in ["company", "vendor", "name"]):
+                        row[h] = val if val and len(str(val)) > 3 else await asyncio.to_thread(extract_company, text)
+                    else:
+                        row[h] = str(val).strip() if val and str(val).strip() else "-"
                 return row
             except Exception as e:
-                print(f"❌ {f.filename}: {e}")
-                return {"Source_File": f.filename, **{h: "-" for h in headers}}
+                print(f"❌ AI failed for {f.filename}: {e}")
+                # 🔹 Full fallback using deterministic rules
+                row = {"Source_File": f.filename}
+                for h in headers:
+                    h_lower = h.lower()
+                    if any(k in h_lower for k in ["amount", "total", "paid", "price"]):
+                        row[h] = await asyncio.to_thread(extract_final_amount, text)
+                    elif "date" in h_lower:
+                        row[h] = await asyncio.to_thread(extract_date, text)
+                    elif any(k in h_lower for k in ["company", "vendor", "name"]):
+                        row[h] = await asyncio.to_thread(extract_company, text)
+                    else:
+                        row[h] = "-"
+                return row
 
     results = await asyncio.gather(*(process(f) for f in files))
     df = pd.DataFrame(results)[["Source_File"] + headers]
@@ -113,36 +195,22 @@ async def download_pdf(task_id: str):
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Helvetica", size=8)
-        
         cols = df.columns.tolist()
-        # ✅ Safe width: min 30mm, max 50mm, scales with column count
         col_w = max(30, min(50, 190 // max(len(cols), 1)))
-        
-        # ✅ Helper to prevent text bleed
         def safe(txt, limit=18):
             if not txt: return ""
             txt = str(txt).replace("\n", " ").replace("\r", "")
             return txt[:limit] + (".." if len(txt) > limit else "")
-
-        # Header Row
         pdf.set_fill_color(230, 241, 255)
-        for c in cols:
-            pdf.cell(col_w, 7, safe(c, 20), border=1, fill=True, align="L")
+        for c in cols: pdf.cell(col_w, 7, safe(c, 20), border=1, fill=True, align="L")
         pdf.ln()
-        
-        # Data Rows
         for row in df.itertuples(index=False):
-            for v in row:
-                pdf.cell(col_w, 6, safe(v, 18), border=1, align="L")
+            for v in row: pdf.cell(col_w, 6, safe(v, 18), border=1, align="L")
             pdf.ln()
-            
         out = pdf.output(dest="S")
         pdf_bytes = out.encode("latin-1", errors="replace") if isinstance(out, str) else out
-        return StreamingResponse(
-            io.BytesIO(pdf_bytes),
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=invoices.pdf"}
-        )
+        return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",
+                                 headers={"Content-Disposition": "attachment; filename=invoices.pdf"})
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(500, f"PDF error: {str(e)}")
