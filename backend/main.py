@@ -2,7 +2,7 @@ import os, io, uuid, asyncio, json, re, traceback
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from fastapi import FastAPI, UploadFile, File, Query, HTTPException
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pdfplumber
 import pandas as pd
@@ -113,15 +113,29 @@ async def download_pdf(task_id: str):
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Helvetica", size=8)
+        
         cols = df.columns.tolist()
-        w = max(25, min(45, 190 // max(len(cols), 1)))
+        # ✅ Safe width: min 30mm, max 50mm, scales with column count
+        col_w = max(30, min(50, 190 // max(len(cols), 1)))
+        
+        # ✅ Helper to prevent text bleed
+        def safe(txt, limit=18):
+            if not txt: return ""
+            txt = str(txt).replace("\n", " ").replace("\r", "")
+            return txt[:limit] + (".." if len(txt) > limit else "")
+
+        # Header Row
         pdf.set_fill_color(230, 241, 255)
-        for c in cols: pdf.cell(w, 7, str(c)[:20], border=1, fill=True)
+        for c in cols:
+            pdf.cell(col_w, 7, safe(c, 20), border=1, fill=True, align="L")
         pdf.ln()
+        
+        # Data Rows
         for row in df.itertuples(index=False):
-            for v in row: pdf.cell(w, 6, str(v if v is not None else "")[:25], border=1)
+            for v in row:
+                pdf.cell(col_w, 6, safe(v, 18), border=1, align="L")
             pdf.ln()
-        # ✅ Linux/Render safe encoding
+            
         out = pdf.output(dest="S")
         pdf_bytes = out.encode("latin-1", errors="replace") if isinstance(out, str) else out
         return StreamingResponse(
@@ -131,14 +145,4 @@ async def download_pdf(task_id: str):
         )
     except Exception as e:
         traceback.print_exc()
-        # ✅ Fallback: return a simple text PDF so download never fails
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Helvetica", size=12)
-        pdf.cell(0, 10, f"PDF generation failed. Please use Excel download.", border=0, ln=True)
-        pdf.cell(0, 10, f"Error: {str(e)[:50]}", border=0, ln=True)
-        return StreamingResponse(
-            io.BytesIO(pdf.output(dest="S").encode("latin-1")),
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=invoices_error.pdf"}
-        )
+        raise HTTPException(500, f"PDF error: {str(e)}")
