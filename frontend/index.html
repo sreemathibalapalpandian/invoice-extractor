@@ -26,19 +26,21 @@
   
   /* ✅ Header + Signature Layout */
   .header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
-  .sig{font-family:monospace;font-size:1.2rem;font-weight:bold;color:#334155;background:#f1f5f9;padding:6px 14px;border-radius:8px;letter-spacing:-0.5px}
+  .sig{font-family:monospace;font-size:1.2rem;font-weight:bold;color:#334155;background:#f1f5f9;padding:6px 14px;border-radius:8px;letter-spacing:-0.5px;display:none}
+  .sig.show{display:block}
   
-  /* ✅ Warning Badge */
+  /* ✅ Warning Row Layout */
   .top-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}
-  .badge{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:8px 14px;border-radius:20px;font-size:12px;display:flex;align-items:center;gap:6px;font-weight:500;white-space:nowrap}
+  .warning-group{display:flex;align-items:center;gap:12px}
+  .badge{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:500;display:flex;align-items:center;white-space:nowrap}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <!-- ✅ Heading and Signature in same row -->
+  <!-- ✅ Signature hidden initially -->
   <div class="header-row">
     <h2 style="margin:0;">AI Invoice Extractor</h2>
-    <span class="sig">-smb</span>
+    <span class="sig" id="sig">-smb</span>
   </div>
   
   <div class="card" id="s1">
@@ -58,13 +60,16 @@
   </div>
 
   <div class="card hidden" id="s3">
-    <!-- ✅ Warning moved to right side inside this card -->
+    <!-- ✅ Yellow box (text only) + Image to the right -->
     <div class="top-header">
       <h3 style="margin:0">3. Preview & Download</h3>
-      <div class="badge">
-        <img src="./cam-shy-posing.png" alt="cam-shy-posing" style="width:16px;height:16px;margin-right:6px">
-        It is not stored anywhere, please download. SORRY!!
-    </div>
+      <div class="warning-group">
+        <div class="badge">
+            It is not stored anywhere, please download. SORRY!!
+        </div>
+        <!-- 🖼️ Image sits outside the yellow box, slightly bigger -->
+        <img src="./cam-shy-posing.png" alt="cam-shy-posing" style="width:42px;height:42px;object-fit:contain;">
+      </div>
     </div>
 
     <div class="status" id="stat"></div>
@@ -83,7 +88,7 @@
 const API = "https://invoice-extractor-backend.onrender.com/api"; // 🔧 REPLACE WITH YOUR ACTUAL RENDER URL
 let files=[], tid=null;
 const $=id=>document.getElementById(id);
-const dz=$("dz"),fi=$("fi"),fc=$("fc"),cols=$("cols"),btn=$("btn"),prev=$("prev"),stat=$("stat"),dlxls=$("dlxls"),dlpdf=$("dlpdf"),bar=$("bar");
+const dz=$("dz"),fi=$("fi"),fc=$("fc"),cols=$("cols"),btn=$("btn"),prev=$("prev"),stat=$("stat"),dlxls=$("dlxls"),dlpdf=$("dlpdf"),bar=$("bar"),sig=$("sig");
 
 dz.onclick=()=>fi.click();
 dz.ondragover=e=>{e.preventDefault();dz.style.borderColor="#2563eb";dz.style.background="#f0f7ff";};
@@ -97,6 +102,7 @@ function updBtn(){btn.disabled=!(files.length&&cols.value.trim());}
 btn.onclick=async()=>{
   btn.disabled=true;btn.textContent="Processing...";
   $("s3").classList.remove("hidden");stat.textContent="Extracting...";prev.innerHTML="";dlxls.disabled=true;dlpdf.disabled=true;bar.style.width="10%";
+  sig.classList.add("show"); // ✅ Signature appears only after click
   let prog=10;const int=setInterval(()=>{prog=Math.min(prog+2,90);bar.style.width=prog+"%";},800);
   const fd=new FormData();files.forEach(f=>fd.append("files",f));
   try{
@@ -132,7 +138,7 @@ async function triggerDownload(url, filename) {
     document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
   } catch (e) {
-    alert(` ${filename} failed: ${e.message}`);
+    alert(`❌ ${filename} failed: ${e.message}`);
   }
 }
 </script>
