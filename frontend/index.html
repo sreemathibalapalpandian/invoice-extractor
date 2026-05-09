@@ -41,7 +41,7 @@
     <h3>2. Define Columns to Extract</h3>
     <div class="input-group">
       <label>Columns (comma separated)</label>
-      <input type="text" id="cols" placeholder="e.g., Company Name, Invoice Date, Total Amount, PO Number">
+      <input type="text" id="cols" placeholder="e.g., Company Name, Date, Total Amount">
     </div>
     <button class="btn" id="btn" disabled>Extract with AI</button>
   </div>
@@ -51,7 +51,7 @@
     <div class="status" id="stat"></div>
     <div class="progress"><div class="bar" id="bar"></div></div>
     <div style="overflow-x:auto" id="prev"></div>
-    <div class="warn">😅 Download now. This data is not stored anywhere. It will be gone.</div>
+    <div class="warn">⚠️ Download now. Data is processed in-memory and vanishes when you close this tab.</div>
     <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn" id="dlxls" disabled>Download Excel</button>
       <button class="btn" id="dlpdf" disabled>Download PDF</button>
@@ -61,8 +61,7 @@
 </div>
 
 <script>
-const API = "https://invoice-extractor-backend.onrender.com/api";
-
+const API = "http://localhost:8000/api";
 let files = [], tid = null;
 const $ = id => document.getElementById(id);
 const dz=$("dz"), fi=$("fi"), fc=$("fc"), cols=$("cols"), btn=$("btn"), prev=$("prev"), stat=$("stat"), dlxls=$("dlxls"), dlpdf=$("dlpdf"), bar=$("bar");
@@ -97,7 +96,7 @@ btn.onclick = async () => {
   
   try {
     const r = await fetch(`${API}/extract?${q}`, { method: "POST", body: fd });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.detail || "Backend failed"); }
     const d = await r.json();
     tid = d.task_id;
     
@@ -116,14 +115,29 @@ btn.onclick = async () => {
     dlxls.disabled = false; dlpdf.disabled = false;
   } catch (e) {
     clearInterval(int); bar.style.width = "0%";
-    console.error(e);
-    stat.textContent = "❌ Failed. Check backend or PDF readability.";
+    stat.textContent = `❌ ${e.message || "Failed. Check console."}`;
   }
   btn.textContent = "Extract with AI"; btn.disabled = false;
 };
 
-dlxls.onclick = () => window.open(`${API}/download/excel/${tid}`, "_blank");
-dlpdf.onclick = () => window.open(`${API}/download/pdf/${tid}`, "_blank");
+// Helper to show exact error on download fail
+async function downloadWithErrorHandling(url, type) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.detail || "Download failed"); }
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = type === "excel" ? "invoices.xlsx" : "invoices.pdf";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    alert(`❌ ${type.toUpperCase()} Download Failed:\n${e.message}`);
+  }
+}
+
+dlxls.onclick = () => downloadWithErrorHandling(`${API}/download/excel/${tid}`, "excel");
+dlpdf.onclick = () => downloadWithErrorHandling(`${API}/download/pdf/${tid}`, "pdf");
 </script>
 </body>
 </html>
