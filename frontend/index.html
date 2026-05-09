@@ -53,8 +53,8 @@
     <div style="overflow-x:auto" id="prev"></div>
     <div class="warn">⚠️ Download now. Data is processed in-memory and vanishes when you close this tab.</div>
     <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn" id="dlxls" disabled>Download Excel</button>
-      <button class="btn" id="dlpdf" disabled>Download PDF</button>
+      <button class="btn" id="dlxls">Download Excel</button>
+      <button class="btn" id="dlpdf">Download PDF</button>
       <button class="btn sec" onclick="location.reload()">Reset</button>
     </div>
   </div>
@@ -120,24 +120,20 @@ btn.onclick = async () => {
   btn.textContent = "Extract with AI"; btn.disabled = false;
 };
 
-// Helper to show exact error on download fail
-async function downloadWithErrorHandling(url, type) {
-  try {
-    const r = await fetch(url);
-    if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.detail || "Download failed"); }
-    const blob = await r.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = type === "excel" ? "invoices.xlsx" : "invoices.pdf";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  } catch (e) {
-    alert(`❌ ${type.toUpperCase()} Download Failed:\n${e.message}`);
-  }
-}
+// ✅ Reliable download using anchor tags (bypasses fetch CORS issues)
+dlxls.onclick = () => triggerDownload(`${API}/download/excel/${tid}`, "invoices.xlsx");
+dlpdf.onclick = () => triggerDownload(`${API}/download/pdf/${tid}`, "invoices.pdf");
 
-dlxls.onclick = () => downloadWithErrorHandling(`${API}/download/excel/${tid}`, "excel");
-dlpdf.onclick = () => downloadWithErrorHandling(`${API}/download/pdf/${tid}`, "pdf");
+function triggerDownload(url, filename) {
+  if (!tid) return alert("Extract data first.");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.target = "_blank";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
 </script>
 </body>
 </html>

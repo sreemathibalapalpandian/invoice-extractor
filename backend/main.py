@@ -30,8 +30,7 @@ CACHE_TTL = 600
 def extract_text(pdf_bytes: bytes) -> str:
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            text = " ".join(page.extract_text() or "" for page in pdf.pages)
-            return text[:8000]
+            return " ".join(page.extract_text() or "" for page in pdf.pages)[:8000]
     except:
         return ""
 
@@ -50,16 +49,13 @@ async def call_groq(client: AsyncGroq, prompt: str, retries: int = 3):
             res = await client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=300,
-                response_format={"type": "json_object"}
+                temperature=0.1, max_tokens=300, response_format={"type": "json_object"}
             )
             raw = res.choices[0].message.content.strip()
-            raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.IGNORECASE)
-            return json.loads(raw)
+            return json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.IGNORECASE))
         except json.JSONDecodeError:
             if attempt < retries - 1:
-                prompt += "\n\nIMPORTANT: Return ONLY valid JSON. No markdown, no extra text."
+                prompt += "\n\nIMPORTANT: Return ONLY valid JSON. No markdown."
                 await asyncio.sleep(1)
                 continue
             raise
@@ -86,13 +82,13 @@ async def extract(files: list[UploadFile] = File(...), columns: str = Query(...)
             if not text.strip():
                 return {"Source_File": f.filename, **{h: "-" for h in headers}}
 
-            prompt = f"""Extract ONLY these exact fields from the invoice text. Return strict JSON. Use null if truly missing.
+            prompt = f"""Extract ONLY these exact fields. Return strict JSON. Use null if missing.
 Fields: {json.dumps(headers)}
 Rules:
 - company name -> Top vendor/business name.
-- date paid -> Paid/Invoice/Due date. Keep format.
-- invoice amount paid -> FINAL total only.
-- Return ONLY valid JSON.
+- date paid -> Paid/Invoice/Due date. Keep original format.
+- invoice amount paid -> FINAL grand total only.
+- Return ONLY valid JSON with exact keys.
 Text: {text}"""
             
             try:
@@ -100,8 +96,7 @@ Text: {text}"""
                 row = {"Source_File": f.filename}
                 for h in headers:
                     val = data.get(h)
-                    if val in (None, "", "-"):
-                        val = regex_fallback(text, h)
+                    if val in (None, "", "-"): val = regex_fallback(text, h)
                     row[h] = str(val).strip() if val else "-"
                 return row
             except Exception as e:
@@ -115,11 +110,7 @@ Text: {text}"""
     task_id = str(uuid.uuid4())
     CACHE[task_id] = {"df": df, "expires": datetime.now() + timedelta(seconds=CACHE_TTL)}
     
-    return {
-        "task_id": task_id,
-        "preview": df.head(50).to_dict(orient="records"),
-        "total": len(df)
-    }
+    return {"task_id": task_id, "preview": df.head(50).to_dict(orient="records"), "total": len(df)}
 
 @app.get("/api/download/excel/{task_id}")
 async def download_excel(task_id: str):
@@ -132,36 +123,29 @@ async def download_excel(task_id: str):
 
 @app.get("/api/download/pdf/{task_id}")
 async def download_pdf(task_id: str):
-    if task_id not in CACHE:
-        raise HTTPException(404, "Session expired")
+    if task_id not in CACHE: raise HTTPException(404, "Session expired")
     try:
         df = CACHE[task_id]["df"]
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Helvetica", size=8)
-
+        
         cols = df.columns.tolist()
-        col_width = max(25, min(40, 190 // max(len(cols), 1)))
-
-        # Header
+        col_w = max(25, min(45, 190 // max(len(cols), 1)))
+        
         pdf.set_fill_color(230, 241, 255)
         for col in cols:
-            txt = str(col).replace("\n", " ").replace("\r", "")[:22]
-            # Force ASCII-safe to prevent fpdf2 crashes
-            txt = txt.encode("ascii", errors="ignore").decode("ascii")
-            pdf.cell(col_width, 7, txt, border=1, fill=True)
+            pdf.cell(col_w, 7, str(col)[:20], border=1, fill=True)
         pdf.ln()
-
-        # Data Rows
+        
         for row in df.itertuples(index=False):
             for val in row:
-                txt = str(val) if val is not None else ""
-                txt = txt.replace("\n", " ").replace("\r", "")[:25]
-                txt = txt.encode("ascii", errors="ignore").decode("ascii")
-                pdf.cell(col_width, 6, txt, border=1)
+                pdf.cell(col_w, 6, str(val if val is not None else "")[:25], border=1)
             pdf.ln()
-
-        pdf_bytes = pdf.output()  # Returns bytes in fpdf2
+            
+        # ✅ CRITICAL: fpdf2 output returns string. Encode to latin-1 (standard PDF encoding)
+        pdf_bytes = pdf.output(dest="S").encode("latin-1", errors="replace")
+        
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
