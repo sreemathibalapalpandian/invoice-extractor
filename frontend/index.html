@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI Invoice Extractor</title>
 <style>
-  body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:30px;background:#f8fafc;color:#111;position:relative}
-  .wrap{max-width:900px;margin:0 auto;padding-top:10px}
+  body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:30px;background:#f8fafc;color:#111}
+  .wrap{max-width:900px;margin:0 auto}
   .card{background:#fff;padding:24px;margin-bottom:16px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
   .hidden{display:none}
   .drop{border:2px dashed #cbd5e1;padding:45px;text-align:center;cursor:pointer;border-radius:8px;transition:.15s}
-  .drop:hover{border-color="#2563eb";background:#f0f7ff}
+  .drop:hover{border-color:#2563eb;background:#f0f7ff}
   .input-group{margin:14px 0}
   .input-group label{display:block;font-weight:500;margin-bottom:6px;font-size:14px}
   .input-group input{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;box-sizing:border-box}
@@ -24,23 +24,22 @@
   .progress{height:6px;background:#e2e8f0;border-radius:3px;margin:12px 0;overflow:hidden}
   .bar{height:100%;background:#2563eb;width:0%;transition:width .3s}
   
-  /* ✅ Signature Styling */
-  .signature{position:fixed;top:30px;right:30px;font-family:monospace;font-size:16px;font-weight:bold;color:#94a3b8;background:#f1f5f9;padding:6px 12px;border-radius:6px;letter-spacing:-1px;z-index:100}
+  /* ✅ Header + Signature Layout */
+  .header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+  .sig{font-family:monospace;font-size:1.2rem;font-weight:bold;color:#334155;background:#f1f5f9;padding:6px 14px;border-radius:8px;letter-spacing:-0.5px}
   
-  /* ✅ Warning Badge Styling */
+  /* ✅ Warning Badge */
   .top-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}
   .badge{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:8px 14px;border-radius:20px;font-size:12px;display:flex;align-items:center;gap:6px;font-weight:500;white-space:nowrap}
-  
-  h2{margin:0 0 20px;padding-right:60px}
 </style>
 </head>
 <body>
-
-<!-- ✅ Signature placed in top right corner -->
-<div class="signature">-smb</div>
-
 <div class="wrap">
-  <h2>AI Invoice Extractor</h2>
+  <!-- ✅ Heading and Signature in same row -->
+  <div class="header-row">
+    <h2 style="margin:0;">AI Invoice Extractor</h2>
+    <span class="sig">-smb</span>
+  </div>
   
   <div class="card" id="s1">
     <h3>1. Upload Invoices</h3>
@@ -59,7 +58,7 @@
   </div>
 
   <div class="card hidden" id="s3">
-    <!-- ✅ Warning badge moved to the right side inside this card -->
+    <!-- ✅ Warning moved to right side inside this card -->
     <div class="top-header">
       <h3 style="margin:0">3. Preview & Download</h3>
       <div class="badge">
@@ -107,7 +106,7 @@ btn.onclick=async()=>{
     let h="<table><thead><tr>";const k=Object.keys(d.preview[0]||{});k.forEach(x=>h+=`<th>${x}</th>`);h+="</tr></thead><tbody>";
     d.preview.forEach(r=>{h+="<tr>";k.forEach(x=>h+=`<td>${r[x]||"-"}</td>`);h+="</tr>";});h+="</tbody></table>";
     prev.innerHTML=h;stat.textContent=`✅ ${d.total} invoices ready.`;dlxls.disabled=false;dlpdf.disabled=false;
-  }catch(e){clearInterval(int);bar.style.width="0%";stat.textContent=` ${e.message}`;}
+  }catch(e){clearInterval(int);bar.style.width="0%";stat.textContent=`❌ ${e.message}`;}
   btn.textContent="Extract";btn.disabled=false;
 };
 
@@ -132,7 +131,7 @@ async function triggerDownload(url, filename) {
     document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
   } catch (e) {
-    alert(`❌ ${filename} failed: ${e.message}`);
+    alert(` ${filename} failed: ${e.message}`);
   }
 }
 </script>
