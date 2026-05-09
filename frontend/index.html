@@ -57,7 +57,7 @@
   </div>
 </div>
 <script>
-const API = "https://invoice-extractor-backend.onrender.com/api"; // REPLACE WITH RENDER URL WHEN DEPLOYED
+const API = "https://invoice-extractor-backend.onrender.com/api"; // 🔧 REPLACE WITH YOUR ACTUAL RENDER URL
 let files=[], tid=null;
 const $=id=>document.getElementById(id);
 const dz=$("dz"),fi=$("fi"),fc=$("fc"),cols=$("cols"),btn=$("btn"),prev=$("prev"),stat=$("stat"),dlxls=$("dlxls"),dlpdf=$("dlpdf"),bar=$("bar");
@@ -88,9 +88,30 @@ btn.onclick=async()=>{
   btn.textContent="Extract";btn.disabled=false;
 };
 
-// ✅ Direct browser navigation bypasses fetch/CORS issues entirely
-dlxls.onclick=()=>tid&&window.open(`${API}/download/excel/${tid}`,"_blank");
-dlpdf.onclick=()=>tid&&window.open(`${API}/download/pdf/${tid}`,"_blank");
+// ✅ Robust download handler (bypasses popup blockers & cross-origin issues)
+dlxls.onclick = () => triggerDownload(`${API}/download/excel/${tid}`, "invoices.xlsx");
+dlpdf.onclick = () => triggerDownload(`${API}/download/pdf/${tid}`, "invoices.pdf");
+
+async function triggerDownload(url, filename) {
+  if (!tid) return alert("Please extract data first.");
+  try {
+    const res = await fetch(url, { method: "GET" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Download failed" }));
+      throw new Error(err.detail || `Server returned ${res.status}`);
+    }
+    const blob = await res.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  } catch (e) {
+    alert(`❌ ${filename} failed: ${e.message}`);
+  }
+}
 </script>
 </body>
 </html>
